@@ -149,8 +149,6 @@ export class PortfolioService {
     const gainLoss = marketValue - totalCost;
     const gainLossPercent = totalCost !== 0 ? (gainLoss / totalCost) * 100 : 0;
 
-    const veridian = await this.getVeridianData(symbol);
-
     const newPosition: Position = {
       id: Math.random().toString(36).substr(2, 9),
       symbol: symbol.toUpperCase(),
@@ -161,13 +159,13 @@ export class PortfolioService {
       marketValue,
       unrealizedGainLoss: gainLoss,
       unrealizedGainLossPercent: gainLossPercent,
-      weight: 0, 
+      weight: 0,
       sector: companyData.sector || "Unknown",
       beta: parseNumber(stats?.beta || "1.0"),
       pe: parseNumber(stats?.peRatio || "0"),
-      veridianTargetPrice: veridian.targetPrice,
-      veridianRating: veridian.rating,
-      upsideToTarget: (veridian.targetPrice && currentPrice > 0) ? ((veridian.targetPrice - currentPrice) / currentPrice) * 100 : null,
+      veridianTargetPrice: null,
+      veridianRating: null,
+      upsideToTarget: null,
       purchaseDate
     };
 

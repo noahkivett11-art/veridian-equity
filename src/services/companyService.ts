@@ -7,6 +7,7 @@ import { MarketDataService as APIMarketDataService } from "./api/marketDataServi
 import { CompanyHeaderData, CompanyKeyStats as APIKeyStats, HistoricalPoint } from "./api/types";
 import { FinnhubClient } from "./api/finnhubClient";
 import { AlphaVantageClient } from "./api/alphaVantageClient";
+import { TwelveDataClient } from "./api/twelveDataClient";
 
 export interface CompanySearchResult {
   symbol: string;
@@ -201,9 +202,28 @@ export class CompanyDataService {
     const days = daysBack[range] ?? 30;
     const from = now - days * 86400;
 
-    // Finnhub candle resolution
-    const resolution = range === '1D' ? '5' : range === '1W' ? '60' : 'D';
+    // TwelveData — primary source, separate rate limiter from Alpha Vantage
+    const tdConfig: Record<string, { interval: string; outputsize: number }> = {
+      '1D':  { interval: '5min',   outputsize: 100 },
+      '1W':  { interval: '1h',     outputsize: 56  },
+      '1M':  { interval: '1day',   outputsize: 30  },
+      '3M':  { interval: '1day',   outputsize: 90  },
+      '6M':  { interval: '1day',   outputsize: 180 },
+      'YTD': { interval: '1day',   outputsize: 252 },
+      '1Y':  { interval: '1day',   outputsize: 365 },
+      '5Y':  { interval: '1week',  outputsize: 260 },
+      'MAX': { interval: '1month', outputsize: 120 },
+    };
+    const td = tdConfig[range] ?? { interval: '1day', outputsize: 30 };
+    try {
+      const points = await TwelveDataClient.getInstance().getTimeSeries(symbol, td.interval, td.outputsize);
+      if (points && points.length > 0) return points;
+    } catch {
+      // fall through
+    }
 
+    // Finnhub candles — fails fast (4xx → no retry) if key lacks candle access
+    const resolution = range === '1D' ? '5' : range === '1W' ? '60' : 'D';
     try {
       const candles = await FinnhubClient.getInstance().getCandles(symbol, resolution, from, now);
       if (candles && candles.t.length > 0) {
@@ -216,7 +236,7 @@ export class CompanyDataService {
       // fall through
     }
 
-    // Alpha Vantage fallback (only if key exists)
+    // Alpha Vantage — third option, shares rate limiter with financial data calls
     try {
       const api = APIMarketDataService.getInstance();
       let interval = "DAILY";
@@ -233,7 +253,6 @@ export class CompanyDataService {
       // fall through
     }
 
-    // Deterministic mock data — always renders a plausible chart
     return this.generateMockHistory(symbol, days, range === '1D');
   }
 

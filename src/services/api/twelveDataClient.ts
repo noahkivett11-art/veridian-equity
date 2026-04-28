@@ -56,6 +56,29 @@ export class TwelveDataClient {
     }
   }
 
+  public async getTimeSeries(symbol: string, interval: string, outputsize: number): Promise<{ date: string; price: number }[] | null> {
+    console.log(`[TwelveData] Fetching time_series for ${symbol} (${interval}, ${outputsize} points)`);
+    const data = await this.fetchWithRateLimit({
+      endpoint: "time_series",
+      symbol,
+      interval,
+      outputsize: String(outputsize),
+    });
+
+    if (!data || data.status === "error" || !Array.isArray(data.values) || data.values.length === 0) {
+      console.warn(`[TwelveData] No time series data for ${symbol}:`, data?.message ?? "empty");
+      return null;
+    }
+
+    return data.values
+      .slice()
+      .reverse()
+      .map((v: any) => ({
+        date: v.datetime as string,
+        price: parseFloat(v.close),
+      }));
+  }
+
   public async getQuote(symbol: string, assetClass: AssetClass = 'macro'): Promise<MarketOverviewItem | null> {
     console.log(`[TwelveData] Fetching quote for ${symbol}`);
     

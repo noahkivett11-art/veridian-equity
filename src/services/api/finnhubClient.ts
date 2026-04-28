@@ -24,7 +24,7 @@ export class FinnhubClient {
     return FinnhubClient.instance;
   }
 
-  private async fetchWithKey(endpoint: string, params: Record<string, string>, retryCount = 0, bypassCache = false): Promise<any> {
+  private async fetchWithKey(endpoint: string, params: Record<string, string>, _retryCount = 0, bypassCache = false): Promise<any> {
     if (!API_KEY) {
       console.warn("Finnhub API Key is missing.");
       return { error: "API Key missing" };
@@ -32,8 +32,7 @@ export class FinnhubClient {
 
     const queryParams = new URLSearchParams({ ...params, token: API_KEY });
     const cacheKey = `${endpoint}?${queryParams.toString()}`;
-    
-    // Check cache
+
     if (!bypassCache) {
       const cached = this.cache.get(cacheKey);
       if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
@@ -41,41 +40,50 @@ export class FinnhubClient {
       }
     }
 
-    // Queue requests to avoid bursts
+    const url = `${BASE_URL}/${endpoint}?${queryParams.toString()}`;
+
+    // All retries run inline inside a single queue slot — avoids circular promise
+    // chains that occur when retries are chained to the end of a non-empty queue.
     return this.requestQueue = this.requestQueue.then(async () => {
       await new Promise(resolve => setTimeout(resolve, this.MIN_REQUEST_INTERVAL));
-      
-      const url = `${BASE_URL}/${endpoint}?${queryParams.toString()}`;
 
-      try {
-        const response = await fetch(url);
-        
-        if (response.status === 429 && retryCount < 3) {
-          const backoff = Math.pow(2, retryCount) * 1000 + Math.random() * 1000;
-          console.warn(`[Finnhub] Rate limited (429). Retrying in ${Math.round(backoff)}ms...`);
-          await new Promise(resolve => setTimeout(resolve, backoff));
-          return this.fetchWithKey(endpoint, params, retryCount + 1, bypassCache);
-        }
+      for (let attempt = 0; attempt < 4; attempt++) {
+        try {
+          const response = await fetch(url);
 
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        
-        const data = await response.json();
-        
-        // Cache successful response
-        if (data && !data.error) {
-          this.cache.set(cacheKey, { data, timestamp: Date.now() });
+          if (response.status === 429 && attempt < 3) {
+            const backoff = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+            console.warn(`[Finnhub] Rate limited (429). Retrying in ${Math.round(backoff)}ms...`);
+            await new Promise(resolve => setTimeout(resolve, backoff));
+            continue;
+          }
+
+          // 4xx client errors are deterministic — retrying won't help
+          if (response.status >= 400 && response.status < 500) {
+            return { error: `HTTP ${response.status}` };
+          }
+
+          if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+
+          const data = await response.json();
+
+          if (data && !data.error) {
+            this.cache.set(cacheKey, { data, timestamp: Date.now() });
+          }
+
+          return data;
+        } catch (error) {
+          if (attempt < 3) {
+            const backoff = Math.pow(2, attempt) * 1000;
+            await new Promise(resolve => setTimeout(resolve, backoff));
+            continue;
+          }
+          console.error("Finnhub fetch error:", error);
+          return { error: String(error) };
         }
-        
-        return data;
-      } catch (error) {
-        if (retryCount < 3) {
-          const backoff = Math.pow(2, retryCount) * 1000;
-          await new Promise(resolve => setTimeout(resolve, backoff));
-          return this.fetchWithKey(endpoint, params, retryCount + 1, bypassCache);
-        }
-        console.error("Finnhub fetch error:", error);
-        return { error: String(error) };
       }
+
+      return { error: "Max retries exceeded" };
     });
   }
 
