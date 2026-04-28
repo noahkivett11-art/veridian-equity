@@ -88,8 +88,8 @@ export class CompsService {
     const api = MarketDataService.getInstance();
     const peerSymbols = await api.getPeers(symbol);
     
-    // Limit to top 6 peers for performance and relevance
-    const topPeers = peerSymbols.slice(0, 6);
+    // Limit to top 8 peers for performance and relevance
+    const topPeers = peerSymbols.slice(0, 8);
     
     const peerData = await Promise.all(
       topPeers.map(s => this.fetchPeerData(s).catch(() => null))

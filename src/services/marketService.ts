@@ -17,15 +17,23 @@ export interface MarketIndicator {
   lastUpdated: string | null;
   status: 'loading' | 'success' | 'error';
   provider?: string;
+  isIndex?: boolean;
 }
 
+// ETF prices are multiplied to derive the underlying index level.
+// Multipliers supplied by user based on current market levels:
+//   SPY × 10  → S&P 500   (~5,000–7,000 range)
+//   DIA × 100 → Dow Jones  (~40,000–50,000 range)
+//   QQQ × 37.5→ NASDAQ 100 (~20,000–25,000 range)
+//   IWM × 10  → Russell 2000(~2,000–3,000 range)
+// isIndex=true suppresses the "$" prefix and uses integer formatting.
 export const INDICATORS_CONFIG = [
-  { id: 'sp500',   name: 'S&P 500',       symbol: 'SPY' },
-  { id: 'dow',     name: 'Dow Jones',      symbol: 'DIA' },
-  { id: 'nasdaq',  name: 'NASDAQ 100',     symbol: 'QQQ' },
-  { id: 'russell', name: 'Russell 2000',   symbol: 'IWM' },
-  { id: 'gold',    name: 'Gold',           symbol: 'GLD' },
-  { id: 'bitcoin', name: 'Bitcoin',        symbol: 'BTC/USD' },
+  { id: 'sp500',   name: 'S&P 500',       symbol: 'SPY',     indexMultiplier: 10,   isIndex: true  },
+  { id: 'dow',     name: 'Dow Jones',      symbol: 'DIA',     indexMultiplier: 100,  isIndex: true  },
+  { id: 'nasdaq',  name: 'NASDAQ 100',     symbol: 'QQQ',     indexMultiplier: 37.5, isIndex: true  },
+  { id: 'russell', name: 'Russell 2000',   symbol: 'IWM',     indexMultiplier: 10,   isIndex: true  },
+  { id: 'gold',    name: 'Gold',           symbol: 'GLD',     indexMultiplier: 10,   isIndex: false },
+  { id: 'bitcoin', name: 'Bitcoin',        symbol: 'BTC/USD', indexMultiplier: 1,    isIndex: false },
 ];
 
 /**
@@ -63,21 +71,22 @@ export class MarketDataService {
       
       const mapped = INDICATORS_CONFIG.map(config => {
         const item = dataItems.find(d => d.symbol.toUpperCase() === config.symbol.toUpperCase());
-        
+
         if (item) {
           const rawPrice = typeof item.price === 'number' ? item.price : parseFloat(String(item.price));
           const rawChange = typeof item.change === 'number' ? item.change : parseFloat(String(item.change));
-          
+          const multiplier = config.indexMultiplier ?? 1;
+
           const mappedItem = {
             ...config,
-            value: rawPrice,
-            change: rawChange,
+            value: rawPrice * multiplier,
+            change: rawChange * multiplier,
             percentChange: item.changePercent ?? null,
             lastUpdated: item.lastUpdated || new Date().toISOString(),
             status: 'success' as const,
             provider: item.provider
           };
-          
+
           console.log(`[REBUILD STAGE 2] Mapped ${config.id}:`, mappedItem);
           return mappedItem;
         }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Search, Sparkles, Home } from "lucide-react";
+import { Search, Sparkles, Home, Sun, Moon } from "lucide-react";
 import { useDebounce, useClickOutside } from "../../hooks";
 import { CompanyDataService, CompanySearchResult } from "../../services/companyService";
 
@@ -9,6 +9,8 @@ interface HeaderProps {
   onToggleCopilot: () => void;
   isCopilotOpen: boolean;
   onGoHome: () => void;
+  isLightMode: boolean;
+  onToggleLightMode: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -16,6 +18,8 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleCopilot,
   isCopilotOpen,
   onGoHome,
+  isLightMode,
+  onToggleLightMode,
 }) => {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<CompanySearchResult[]>([]);
@@ -96,6 +100,14 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <Home className="w-3.5 h-3.5" />
           Home
+        </button>
+        <button
+          onClick={onToggleLightMode}
+          title={isLightMode ? "Switch to dark mode" : "Switch to light mode"}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white/[0.06] text-slate-400 hover:text-white hover:bg-white/[0.1] transition-all"
+        >
+          {isLightMode ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" />}
+          {isLightMode ? "Dark" : "Light"}
         </button>
         <div className="badge-live">
           <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />

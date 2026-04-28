@@ -145,16 +145,20 @@ export const MarketOverviewModule: React.FC = () => {
         <AlertCircle className="w-5 h-5 mb-2 text-danger/50" /><span className="text-xs">Unavailable</span>
       </div>
     );
+    const isIndex = ind.isIndex ?? false;
+    const valueDecimals = isIndex ? 2 : 2;
+    const changeDecimals = isIndex ? 2 : 2;
     return (
       <div className="space-y-3">
         <div className="text-2xl font-mono font-bold text-white tracking-tighter">
-          <span className="text-slate-500 text-sm mr-0.5">$</span>
-          {formatNumber(ind.value, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          {!isIndex && <span className="text-slate-500 text-sm mr-0.5">$</span>}
+          {formatNumber(ind.value, { minimumFractionDigits: valueDecimals, maximumFractionDigits: valueDecimals })}
+          {isIndex && <span className="text-slate-500 text-sm ml-1">pts</span>}
         </div>
         <div className="flex items-center justify-between pt-2 border-t border-white/[0.04]">
           <span className={`text-xs font-mono font-semibold ${parseNumber(ind.change) >= 0 ? "positive" : "negative"}`}>
             {parseNumber(ind.change) >= 0 ? "+" : ""}
-            {formatNumber(ind.change, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            {formatNumber(ind.change, { minimumFractionDigits: changeDecimals, maximumFractionDigits: changeDecimals })}
           </span>
           <ChangeBadge value={parseNumber(ind.percentChange)} />
         </div>

@@ -239,6 +239,14 @@ export const CompanyResearchModule: React.FC<CompanyResearchProps> = ({ symbol, 
   const displayPct = liveQuote ? liveQuote.changePercent : parseNumber(company.percentChange);
   const isPositive = displayChange >= 0;
 
+  // Derive revenue TTM from financials statements if the metric endpoint didn't return it
+  const revenueTTM = (() => {
+    const fromStats = stats?.revenueTTM;
+    if (fromStats && fromStats !== "Data unavailable") return fromStats;
+    const raw = financials?.income?.annualReports?.[0]?.totalRevenue;
+    return raw ? fmtB(raw) : null;
+  })();
+
   return (
     <div className="space-y-6">
       {/* Header Card */}
@@ -304,7 +312,7 @@ export const CompanyResearchModule: React.FC<CompanyResearchProps> = ({ symbol, 
             {stats && (
               <div className="grid grid-cols-3 gap-3 pt-4 border-t border-white/[0.04]">
                 {[
-                  { label: "Revenue (TTM)", val: stats.revenueTTM },
+                  { label: "Revenue (TTM)", val: revenueTTM },
                   { label: "Op. Margin", val: stats.operatingMarginTTM ? `${stats.operatingMarginTTM}%` : null },
                   { label: "Market Cap", val: company.marketCap },
                 ].map((m) => (

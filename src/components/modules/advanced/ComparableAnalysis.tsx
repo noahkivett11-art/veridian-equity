@@ -31,7 +31,7 @@ export const ComparableAnalysisModule: React.FC<CompsProps> = ({ onSelectTicker,
   }, [debouncedTicker]);
 
   const loadComps = async (sym: string) => {
-    setTicker(sym); setSearchResults([]); setLoading(true); onSelectTicker(sym);
+    setTicker(sym); setSearchResults([]); setLoading(true);
     const data = await CompsService.getInstance().runComparableAnalysis(sym);
     setResult(data); if (data) onResultChange?.(sym, data); setLoading(false);
   };
@@ -103,7 +103,17 @@ export const ComparableAnalysisModule: React.FC<CompsProps> = ({ onSelectTicker,
               <StatRow label="EV/Revenue" value={formatSafe(result.medians.evRevenue,1)} highlight />
             </Card>
             <Card title="Implied Valuation">
-              {result.impliedValuations.map(iv=><StatRow key={iv.metric} label={`Via ${iv.metric}`} value={`$${formatSafe(iv.impliedPrice,2)}`} highlight />)}
+              {result.impliedValuations.map(iv => (
+                <div key={iv.metric} className="flex items-center justify-between py-2.5 border-b border-white/[0.04] last:border-0">
+                  <span className="text-xs text-slate-400">Via {iv.metric}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-mono font-semibold text-white">${formatSafe(iv.impliedPrice, 2)}</span>
+                    <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${iv.upside >= 0 ? "text-accent bg-accent/10" : "text-red-400 bg-red-400/10"}`}>
+                      {iv.upside >= 0 ? "+" : ""}{formatSafe(iv.upside, 1)}%
+                    </span>
+                  </div>
+                </div>
+              ))}
               <div className="mt-4 p-3 bg-accent/[0.06] rounded-lg border border-accent/20 text-center">
                 <div className="text-[9px] text-slate-500 uppercase tracking-wider mb-0.5">Avg Implied Price</div>
                 <div className="text-xl font-mono font-bold text-accent">${formatSafe(result.impliedValuations.reduce((s,v)=>s+(v.impliedPrice||0),0)/(result.impliedValuations.length||1),2)}</div>

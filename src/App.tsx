@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { LandingPage } from "./components/LandingPage";
 
@@ -34,6 +34,12 @@ export default function App() {
   const [activeModule, setActiveModule] = useState<ModuleName>("Market Overview");
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null);
   const [copilotOpen, setCopilotOpen] = useState(false);
+  const [isLightMode, setIsLightMode] = useState(() => localStorage.getItem("veridian-theme") === "light");
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", isLightMode ? "light" : "dark");
+    localStorage.setItem("veridian-theme", isLightMode ? "light" : "dark");
+  }, [isLightMode]);
 
   // Shared analysis results across modules
   const [dcfResults, setDcfResults] = useState<Record<string, DCFResult>>({});
@@ -147,6 +153,8 @@ export default function App() {
           onToggleCopilot={() => setCopilotOpen(!copilotOpen)}
           isCopilotOpen={copilotOpen}
           onGoHome={() => setShowLanding(true)}
+          isLightMode={isLightMode}
+          onToggleLightMode={() => setIsLightMode(m => !m)}
         />
 
         {/* Content */}

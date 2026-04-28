@@ -184,11 +184,34 @@ export class FinnhubClient {
       return val;
     };
 
-    const revenue = normalizeToMillions(m.revenueTTM || m.revenueAnnual);
+    const formatRevenue = (millions: number): string => {
+      if (millions >= 1_000_000) return `$${(millions / 1_000_000).toFixed(1)}T`;
+      if (millions >= 1_000)     return `$${(millions / 1_000).toFixed(1)}B`;
+      return `$${millions.toFixed(0)}M`;
+    };
+
+    const revenueMillions = normalizeToMillions(m.revenueTTM || m.revenueAnnual);
     const netDebt = normalizeToMillions(m.netDebt);
     const capex = normalizeToMillions(m.capitalExpenditureTTM);
     const da = normalizeToMillions(m.depreciationAndAmortizationTTM);
     const shares = p.shareOutstanding;
+
+    // Derive revenue from financials-reported when /stock/metric lacks it
+    let revenueTTMStr = revenueMillions !== undefined ? formatRevenue(revenueMillions) : "Data unavailable";
+    if (revenueTTMStr === "Data unavailable") {
+      const reported = await this.getFinancialsReported(symbol);
+      const ic: any[] = reported?.data?.[0]?.report?.ic ?? [];
+      const revItem = ic.find((item: any) =>
+        item.concept === 'us-gaap_RevenueFromContractWithCustomerExcludingAssessedTax' ||
+        item.concept === 'us-gaap_Revenues'
+      );
+      if (revItem?.value) {
+        const raw = Math.abs(Number(revItem.value));
+        if (raw >= 1e12)      revenueTTMStr = `$${(raw / 1e12).toFixed(1)}T`;
+        else if (raw >= 1e9)  revenueTTMStr = `$${(raw / 1e9).toFixed(1)}B`;
+        else if (raw >= 1e6)  revenueTTMStr = `$${(raw / 1e6).toFixed(0)}M`;
+      }
+    }
 
     return {
       symbol,
@@ -198,7 +221,7 @@ export class FinnhubClient {
       roe: m.roeTTM?.toFixed(2) || "Data unavailable",
       revenueGrowth: m.revenueGrowthTTMYoy?.toFixed(2) || "Data unavailable",
       revenueGrowth5Y: m.revenueGrowth5Y?.toFixed(2) || "Data unavailable",
-      revenueTTM: revenue?.toFixed(2) || "Data unavailable",
+      revenueTTM: revenueTTMStr,
       operatingMarginTTM: m.operatingMarginTTM?.toFixed(2) || "Data unavailable",
       operatingMargin5Y: m.operatingMargin5Y?.toFixed(2) || "Data unavailable",
       taxRateTTM: m.taxRateTTM?.toFixed(2) || "Data unavailable",
