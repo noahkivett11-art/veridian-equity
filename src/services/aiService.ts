@@ -69,7 +69,7 @@ export class AIService {
 
     try {
       const response = await this.ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-2.5-flash",
         contents: prompt,
         config: {
           systemInstruction: "You are a senior equity research analyst at a top-tier investment bank. Your summaries are concise, objective, and data-driven."
@@ -116,7 +116,7 @@ export class AIService {
 
     try {
       const response = await this.ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-2.5-flash",
         contents: prompt,
         config: {
           systemInstruction: "You are a senior investment strategist at Veridian Equity. Your rationales are sophisticated, data-driven, and clearly educational."
@@ -156,7 +156,7 @@ export class AIService {
 
     try {
       const response = await this.ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-2.5-flash",
         contents: prompt,
         config: {
           systemInstruction: "You are a senior event-driven strategist. You analyze catalysts and earnings surprises to identify market-moving events."
@@ -203,7 +203,7 @@ export class AIService {
 
     try {
       const response = await this.ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-2.5-flash",
         contents: prompt,
         config: {
           systemInstruction: "You are the Veridian Equity AI Copilot. You are sophisticated, objective, and strictly educational. You never provide personal advice or guarantees."
