@@ -6,7 +6,6 @@ import { KeyStatisticsPanel } from "./KeyStatistics";
 import { CompanyDataService, CompanyData, CompanyNews, KeyStatistics } from "../../services/companyService";
 import { AIService } from "../../services/aiService";
 import { FinnhubClient } from "../../services/api/finnhubClient";
-import { AlphaVantageClient } from "../../services/api/alphaVantageClient";
 import { LiveQuoteService } from "../../services/liveQuoteService";
 import { useLiveQuote } from "../../hooks";
 import { parseNumber, formatPercent, formatCurrency } from "../../lib/utils";
@@ -19,6 +18,66 @@ const fmtB = (v: string | undefined) => {
   if (Math.abs(n) >= 1e6) return `$${(n / 1e6).toFixed(2)}M`;
   return `$${n.toFixed(2)}`;
 };
+
+// Transforms Finnhub stock/financials-reported XBRL data into the annualReports
+// shape the financial tables expect, matching the keys used in the render below.
+function transformFinnhubFinancials(reports: any[]) {
+  const ts = (v: any) => (v != null ? String(v) : undefined);
+  const byConceptMap = (items: any[]) =>
+    Object.fromEntries((items ?? []).map((x: any) => [x.concept, x.value]));
+
+  // API returns newest-first; quarter === 0 means full-year filing
+  const annuals = reports.filter((r: any) => r.quarter === 0).slice(0, 3);
+  if (!annuals.length) return null;
+
+  const incomeReports = annuals.map((r: any) => {
+    const date = r.endDate?.split(' ')[0] ?? `${r.year}-09-30`;
+    const ic = byConceptMap(r.report?.ic);
+    const cf = byConceptMap(r.report?.cf);
+    const opIncome = ic['us-gaap_OperatingIncomeLoss'] ?? 0;
+    const da = cf['us-gaap_DepreciationDepletionAndAmortization'] ?? 0;
+    return {
+      fiscalDateEnding: date,
+      totalRevenue:    ts(ic['us-gaap_RevenueFromContractWithCustomerExcludingAssessedTax'] ?? ic['us-gaap_Revenues']),
+      grossProfit:     ts(ic['us-gaap_GrossProfit']),
+      operatingIncome: ts(opIncome),
+      netIncome:       ts(ic['us-gaap_NetIncomeLoss']),
+      ebitda:          ts(opIncome + da),
+    };
+  });
+
+  const balanceReports = annuals.map((r: any) => {
+    const date = r.endDate?.split(' ')[0] ?? `${r.year}-09-30`;
+    const bs = byConceptMap(r.report?.bs);
+    return {
+      fiscalDateEnding:        date,
+      totalAssets:             ts(bs['us-gaap_Assets']),
+      totalCurrentAssets:      ts(bs['us-gaap_AssetsCurrent']),
+      totalLiabilities:        ts(bs['us-gaap_Liabilities']),
+      totalCurrentLiabilities: ts(bs['us-gaap_LiabilitiesCurrent']),
+      totalShareholderEquity:  ts(bs['us-gaap_StockholdersEquity']),
+      longTermDebt:            ts(bs['us-gaap_LongTermDebtNoncurrent'] ?? bs['us-gaap_LongTermDebt']),
+    };
+  });
+
+  const cashflowReports = annuals.map((r: any) => {
+    const date = r.endDate?.split(' ')[0] ?? `${r.year}-09-30`;
+    const cf = byConceptMap(r.report?.cf);
+    return {
+      fiscalDateEnding:           date,
+      operatingCashflow:          ts(cf['us-gaap_NetCashProvidedByUsedInOperatingActivities']),
+      capitalExpenditures:        ts(cf['us-gaap_PaymentsToAcquirePropertyPlantAndEquipment']),
+      dividendPayout:             ts(cf['us-gaap_PaymentsOfDividends']),
+      proceedsFromIssuanceOfDebt: ts(cf['us-gaap_ProceedsFromIssuanceOfLongTermDebt']),
+    };
+  });
+
+  return {
+    income:    { annualReports: incomeReports },
+    balance:   { annualReports: balanceReports },
+    cashflow:  { annualReports: cashflowReports },
+  };
+}
 
 interface CompanyResearchProps {
   symbol: string;
@@ -78,12 +137,11 @@ export const CompanyResearchModule: React.FC<CompanyResearchProps> = ({ symbol, 
     const loadFinancials = async () => {
       setFinLoading(true);
       try {
-        const [income, balance, cashflow] = await Promise.all([
-          AlphaVantageClient.getInstance().getIncomeStatement(symbol),
-          AlphaVantageClient.getInstance().getBalanceSheet(symbol),
-          AlphaVantageClient.getInstance().getCashFlow(symbol),
-        ]);
-        setFinancials({ income, balance, cashflow });
+        const raw = await FinnhubClient.getInstance().getFinancialsReported(symbol);
+        if (raw?.data?.length) {
+          const transformed = transformFinnhubFinancials(raw.data);
+          if (transformed) setFinancials(transformed);
+        }
       } catch {}
       setFinLoading(false);
     };
@@ -282,7 +340,7 @@ export const CompanyResearchModule: React.FC<CompanyResearchProps> = ({ symbol, 
         {finLoading ? (
           <div className="space-y-2">{[1,2,3,4].map(i => <Skeleton key={i} className="h-8 w-full" />)}</div>
         ) : !financials ? (
-          <p className="text-xs text-slate-500 text-center py-6">Financial statements unavailable. Add an Alpha Vantage API key to enable this section.</p>
+          <p className="text-xs text-slate-500 text-center py-6">Financial statements unavailable for this symbol.</p>
         ) : (
           <div className="overflow-x-auto">
             {finTab === 'Income' && (() => {

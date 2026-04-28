@@ -262,6 +262,13 @@ export class FinnhubClient {
     return Array.isArray(data) ? data.slice(0, 6) : [];
   }
 
+  public async getFinancialsReported(symbol: string): Promise<{ data: any[] } | null> {
+    console.log(`[Finnhub] Fetching financials-reported for ${symbol}`);
+    const result = await this.fetchWithKey('stock/financials-reported', { symbol, freq: 'annual' });
+    if (!result || result.error || !Array.isArray(result.data)) return null;
+    return result;
+  }
+
   public async getBatchQuotes(symbols: string[]): Promise<any[]> {
     const results = await Promise.allSettled(symbols.map(s => this.getQuote(s)));
     return results
