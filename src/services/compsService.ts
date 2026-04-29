@@ -13,6 +13,7 @@ export interface PeerData {
   sector: string;
   marketCap: string;
   marketCapValue: number;    // millions USD
+  netDebt: number | null;    // millions USD (positive = net debt, negative = net cash)
   revenueGrowth: number | null;
   ebitdaMargin: number | null;
   peRatio: number | null;
@@ -159,6 +160,7 @@ export class CompsService {
       sector: header.sector,
       marketCap: header.marketCap,
       marketCapValue: mktCapVal,
+      netDebt:           nz(parseNumber(stats.netDebt)),
       revenueGrowth:     nz(parseNumber(stats.revenueGrowth)),
       ebitdaMargin:      nz(parseNumber(stats.operatingMarginTTM)),
       peRatio:           pos(parseNumber(stats.peRatio)),
@@ -221,13 +223,16 @@ export class CompsService {
     });
 
     const currentPrice = target.price || 0;
+    // sharesOutstanding is in millions; fallback derives millions from mktCap/price
     const shares =
       target.sharesOutstanding ||
-      (target.marketCapValue * 1_000_000 / (currentPrice || 1));
+      (currentPrice > 0 ? target.marketCapValue / currentPrice : 0);
+    const netDebt = target.netDebt ?? 0; // millions USD (positive = debt > cash)
+    // Enterprise Value in millions: market cap + net debt
+    const ev = target.marketCapValue + netDebt;
     const impliedValuations: ImpliedValuation[] = [];
 
-    // P/E via EPS — implied price = EPS × median peer P/E
-    // Derive EPS from price/PE when not directly available
+    // P/E: implied price = EPS × median peer P/E (no shares/EV needed)
     const effectiveEps =
       (target.eps !== null && target.eps > 0)
         ? target.eps
@@ -237,46 +242,50 @@ export class CompsService {
 
     if (medians.peRatio && effectiveEps && effectiveEps > 0 && currentPrice > 0) {
       const impliedPrice = effectiveEps * medians.peRatio;
-      if (impliedPrice > 0) {
+      if (impliedPrice > 0 && impliedPrice < 10_000 && isFinite(impliedPrice)) {
         impliedValuations.push({
           metric: 'P/E Multiple',
           peerMedian: medians.peRatio,
           targetFundamental: effectiveEps,
-          impliedEquityValue: impliedPrice * shares,
+          impliedEquityValue: impliedPrice * (shares || 1),
           impliedPrice,
           upside: ((impliedPrice - currentPrice) / currentPrice) * 100,
         });
       }
     }
 
-    // EV/EBITDA
-    if (medians.evEbitda && target.evEbitda && target.evEbitda > 0 && currentPrice > 0 && shares > 0) {
-      const ebitda = (target.marketCapValue * 1_000_000) / target.evEbitda;
-      const impliedEV = ebitda * medians.evEbitda;
-      const impliedPrice = impliedEV / shares;
-      if (impliedPrice > 0 && isFinite(impliedPrice)) {
+    // EV/EBITDA — all values in millions USD
+    // EBITDA (M) = EV / multiple  →  Implied EV (M) = EBITDA × peer median
+    // Implied Equity (M) = Implied EV − Net Debt  →  Price = Equity (M) / shares (M)
+    if (medians.evEbitda && target.evEbitda && target.evEbitda > 0 && ev > 0 && shares > 0 && currentPrice > 0) {
+      const ebitda_m = ev / target.evEbitda;
+      const impliedEV_m = ebitda_m * medians.evEbitda;
+      const impliedEquity_m = impliedEV_m - netDebt;
+      const impliedPrice = impliedEquity_m / shares;
+      if (impliedPrice > 0 && impliedPrice < 10_000 && isFinite(impliedPrice)) {
         impliedValuations.push({
           metric: 'EV/EBITDA',
           peerMedian: medians.evEbitda,
-          targetFundamental: ebitda,
-          impliedEquityValue: impliedEV,
+          targetFundamental: ebitda_m,
+          impliedEquityValue: impliedEquity_m,
           impliedPrice,
           upside: ((impliedPrice - currentPrice) / currentPrice) * 100,
         });
       }
     }
 
-    // EV/Revenue
-    if (medians.evRevenue && target.evRevenue && target.evRevenue > 0 && currentPrice > 0 && shares > 0) {
-      const revenue = (target.marketCapValue * 1_000_000) / target.evRevenue;
-      const impliedEV = revenue * medians.evRevenue;
-      const impliedPrice = impliedEV / shares;
-      if (impliedPrice > 0 && isFinite(impliedPrice)) {
+    // EV/Revenue — same pattern
+    if (medians.evRevenue && target.evRevenue && target.evRevenue > 0 && ev > 0 && shares > 0 && currentPrice > 0) {
+      const revenue_m = ev / target.evRevenue;
+      const impliedEV_m = revenue_m * medians.evRevenue;
+      const impliedEquity_m = impliedEV_m - netDebt;
+      const impliedPrice = impliedEquity_m / shares;
+      if (impliedPrice > 0 && impliedPrice < 10_000 && isFinite(impliedPrice)) {
         impliedValuations.push({
           metric: 'EV/Revenue',
           peerMedian: medians.evRevenue,
-          targetFundamental: revenue,
-          impliedEquityValue: impliedEV,
+          targetFundamental: revenue_m,
+          impliedEquityValue: impliedEquity_m,
           impliedPrice,
           upside: ((impliedPrice - currentPrice) / currentPrice) * 100,
         });
