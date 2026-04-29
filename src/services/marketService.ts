@@ -20,21 +20,36 @@ export interface MarketIndicator {
   isIndex?: boolean;
 }
 
-// ETF prices are multiplied to derive the underlying index level.
-// Multipliers supplied by user based on current market levels:
-//   SPY × 10  → S&P 500   (~5,000–7,000 range)
-//   DIA × 100 → Dow Jones  (~40,000–50,000 range)
-//   QQQ × 37.5→ NASDAQ 100 (~20,000–25,000 range)
-//   IWM × 10  → Russell 2000(~2,000–3,000 range)
-// isIndex=true suppresses the "$" prefix and uses integer formatting.
+// Indices fetched directly from Yahoo Finance via CORS proxy — real index points, no ETF multiplier.
+// isIndex=true suppresses the "$" prefix and renders "pts" label.
 export const INDICATORS_CONFIG = [
-  { id: 'sp500',   name: 'S&P 500',       symbol: 'SPY',     indexMultiplier: 10,   isIndex: true  },
-  { id: 'dow',     name: 'Dow Jones',      symbol: 'DIA',     indexMultiplier: 100,  isIndex: true  },
-  { id: 'nasdaq',  name: 'NASDAQ 100',     symbol: 'QQQ',     indexMultiplier: 37.5, isIndex: true  },
-  { id: 'russell', name: 'Russell 2000',   symbol: 'IWM',     indexMultiplier: 10,   isIndex: true  },
+  { id: 'sp500',   name: 'S&P 500',       symbol: '^GSPC',   isIndex: true  },
+  { id: 'dow',     name: 'Dow Jones',      symbol: '^DJI',    isIndex: true  },
+  { id: 'nasdaq',  name: 'NASDAQ',         symbol: '^IXIC',   isIndex: true  },
+  { id: 'russell', name: 'Russell 2000',   symbol: '^RUT',    isIndex: true  },
   { id: 'gold',    name: 'Gold',           symbol: 'GLD',     indexMultiplier: 10,   isIndex: false },
   { id: 'bitcoin', name: 'Bitcoin',        symbol: 'BTC/USD', indexMultiplier: 1,    isIndex: false },
 ];
+
+const YAHOO_INDEX_SYMBOLS = new Set(['^GSPC', '^DJI', '^IXIC', '^RUT']);
+const CORS_PROXY = 'https://corsproxy.io/?url=';
+
+async function fetchYahooIndex(symbol: string): Promise<{ price: number; change: number; changePercent: number } | null> {
+  try {
+    const encoded = encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`);
+    const res = await fetch(`${CORS_PROXY}${encoded}`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const meta = data?.chart?.result?.[0]?.meta;
+    if (!meta?.regularMarketPrice) return null;
+    const price: number = meta.regularMarketPrice;
+    const change: number = meta.regularMarketChange ?? (price - (meta.chartPreviousClose ?? meta.regularMarketPreviousClose ?? price));
+    const changePercent: number = meta.regularMarketChangePercent ?? (change / (price - change) * 100);
+    return { price, change, changePercent };
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Validates that market values are within realistic real-world bounds.
@@ -61,59 +76,55 @@ export class MarketDataService {
 
   public async fetchMarketOverview(): Promise<MarketIndicator[]> {
     const api = APIMarketDataService.getInstance();
-    const symbols = INDICATORS_CONFIG.map(c => c.symbol);
-    
-    console.log('[REBUILD] Fetching indicators for:', symbols);
 
-    try {
-      const dataItems = await api.getMarketOverview(symbols);
-      console.log('[REBUILD STAGE 1] Raw API Response:', dataItems);
-      
-      const mapped = INDICATORS_CONFIG.map(config => {
-        const item = dataItems.find(d => d.symbol.toUpperCase() === config.symbol.toUpperCase());
+    // Fetch Yahoo indices and Finnhub-based symbols in parallel
+    const finnhubSymbols = INDICATORS_CONFIG.filter(c => !YAHOO_INDEX_SYMBOLS.has(c.symbol)).map(c => c.symbol);
+    const [yahooResults, finnhubItems] = await Promise.all([
+      Promise.all(
+        INDICATORS_CONFIG
+          .filter(c => YAHOO_INDEX_SYMBOLS.has(c.symbol))
+          .map(async c => ({ config: c, data: await fetchYahooIndex(c.symbol) }))
+      ),
+      finnhubSymbols.length ? api.getMarketOverview(finnhubSymbols) : Promise.resolve([]),
+    ]);
 
-        if (item) {
-          const rawPrice = typeof item.price === 'number' ? item.price : parseFloat(String(item.price));
-          const rawChange = typeof item.change === 'number' ? item.change : parseFloat(String(item.change));
-          const multiplier = config.indexMultiplier ?? 1;
+    const yahooMap = new Map(yahooResults.map(r => [r.config.symbol, r.data]));
 
-          const mappedItem = {
+    return INDICATORS_CONFIG.map(config => {
+      if (YAHOO_INDEX_SYMBOLS.has(config.symbol)) {
+        const d = yahooMap.get(config.symbol);
+        if (d) {
+          return {
             ...config,
-            value: rawPrice * multiplier,
-            change: rawChange * multiplier,
-            percentChange: item.changePercent ?? null,
-            lastUpdated: item.lastUpdated || new Date().toISOString(),
+            value: d.price,
+            change: d.change,
+            percentChange: d.changePercent,
+            lastUpdated: new Date().toISOString(),
             status: 'success' as const,
-            provider: item.provider
+            provider: 'Yahoo Finance',
           };
-
-          console.log(`[REBUILD STAGE 2] Mapped ${config.id}:`, mappedItem);
-          return mappedItem;
         }
+        return { ...config, value: null, change: null, percentChange: null, lastUpdated: null, status: 'error' as const };
+      }
 
-        console.warn(`[REBUILD STAGE 2 ERROR] Item not found for ${config.id}`);
-
+      // Finnhub / AlphaVantage path for Gold, Bitcoin, etc.
+      const item = finnhubItems.find(d => d.symbol.toUpperCase() === config.symbol.toUpperCase());
+      if (item) {
+        const rawPrice = typeof item.price === 'number' ? item.price : parseFloat(String(item.price));
+        const rawChange = typeof item.change === 'number' ? item.change : parseFloat(String(item.change));
+        const multiplier = (config as any).indexMultiplier ?? 1;
         return {
           ...config,
-          value: null,
-          change: null,
-          percentChange: null,
-          lastUpdated: null,
-          status: 'error' as const
+          value: rawPrice * multiplier,
+          change: rawChange * multiplier,
+          percentChange: item.changePercent ?? null,
+          lastUpdated: item.lastUpdated || new Date().toISOString(),
+          status: 'success' as const,
+          provider: item.provider,
         };
-      });
-      return mapped as MarketIndicator[];
-    } catch (error) {
-      console.error('[REBUILD] Fetch Error:', error);
-      return INDICATORS_CONFIG.map(config => ({
-        ...config,
-        value: null,
-        change: null,
-        percentChange: null,
-        lastUpdated: null,
-        status: 'error' as const
-      }));
-    }
+      }
+      return { ...config, value: null, change: null, percentChange: null, lastUpdated: null, status: 'error' as const };
+    }) as MarketIndicator[];
   }
 
   public async fetchMarketNews(): Promise<any[]> {
