@@ -298,4 +298,17 @@ export class FinnhubClient {
       .map((r, i) => r.status === 'fulfilled' && r.value ? { ...r.value, symbol: symbols[i] } : null)
       .filter(Boolean) as any[];
   }
+
+  public async getEarningsCalendar(symbol: string): Promise<any[]> {
+    const to = new Date();
+    to.setDate(to.getDate() + 90);
+    const from = new Date();
+    from.setFullYear(from.getFullYear() - 3);
+    const data = await this.fetchWithKey('calendar/earnings', {
+      symbol,
+      from: from.toISOString().split('T')[0],
+      to: to.toISOString().split('T')[0],
+    });
+    return data?.earningsCalendar ?? [];
+  }
 }

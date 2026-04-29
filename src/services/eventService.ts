@@ -46,36 +46,38 @@ export class EventService {
     return EventService.instance;
   }
 
-  /**
-   * Fetches earnings history and upcoming dates.
-   * Note: In a real app, this would hit multiple Finnhub endpoints.
-   */
   public async fetchEarningsData(symbol: string): Promise<EarningsResult[]> {
-    // Simulating institutional-grade earnings data
-    // In production, this would use Finnhub's /stock/earnings and /calendar/earnings
-    const quarters = ['Q4 2025', 'Q3 2025', 'Q2 2025', 'Q1 2025', 'Q4 2024'];
-    const baseDate = new Date();
-    
-    return quarters.map((q, i) => {
-      const date = new Date();
-      date.setMonth(baseDate.getMonth() - (i * 3));
-      
-      const actual = 2.5 + Math.random();
-      const estimate = 2.5 + Math.random() * 0.5;
-      const surprise = actual - estimate;
-      
-      return {
-        quarter: q,
-        date: date.toISOString().split('T')[0],
-        epsActual: i === 0 ? null : actual, // Null for upcoming
-        epsEstimate: estimate,
-        surprise: i === 0 ? null : surprise,
-        surprisePercent: i === 0 ? null : (surprise / estimate) * 100,
-        revenueActual: i === 0 ? null : 50000 + Math.random() * 10000,
-        revenueEstimate: 50000 + Math.random() * 5000,
-        priceReaction: i === 0 ? null : (Math.random() * 10 - 5)
-      };
-    });
+    try {
+      const calendar = await FinnhubClient.getInstance().getEarningsCalendar(symbol);
+      if (!calendar.length) return [];
+
+      return calendar
+        .filter((e: any) => e.date)
+        .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .slice(0, 8)
+        .map((e: any) => {
+          const actual: number | null = e.epsActual ?? null;
+          const estimate: number | null = e.epsEstimate ?? null;
+          const surprise = actual != null && estimate != null
+            ? parseFloat((actual - estimate).toFixed(2)) : null;
+          const surprisePercent = surprise != null && estimate !== 0 && estimate != null
+            ? parseFloat((surprise / Math.abs(estimate) * 100).toFixed(1)) : null;
+          return {
+            quarter: `Q${e.quarter} ${e.year}`,
+            date: e.date,
+            epsActual: actual,
+            epsEstimate: estimate,
+            surprise,
+            surprisePercent,
+            revenueActual: e.revenueActual != null ? e.revenueActual / 1_000_000 : null,
+            revenueEstimate: e.revenueEstimate != null ? e.revenueEstimate / 1_000_000 : null,
+            priceReaction: null,
+          };
+        });
+    } catch (error) {
+      console.error('[EventService] Failed to fetch earnings calendar:', error);
+      return [];
+    }
   }
 
   /**
