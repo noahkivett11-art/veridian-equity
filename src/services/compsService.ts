@@ -69,11 +69,12 @@ export class CompsService {
 
     if (!header || !stats) return null;
 
-    // Market cap in millions (Finnhub profile2.marketCapitalization is in millions)
+    // Strip leading $ and commas before parseNumber so parseFloat can read it
+    const mktCapRaw = header.marketCap.replace(/[$,\s]/g, '');
     const mktCapVal =
-      parseNumber(header.marketCap) *
-      (header.marketCap.includes('T') ? 1_000_000 :
-       header.marketCap.includes('B') ? 1_000 : 1);
+      parseNumber(mktCapRaw) *
+      (mktCapRaw.includes('T') ? 1_000_000 :
+       mktCapRaw.includes('B') ? 1_000 : 1);
 
     // Use metric API values if positive; otherwise fall back to financial statements
     let evEbitda: number | null = (() => { const v = parseNumber(stats.evEbitda); return v > 0 ? v : null; })();
@@ -249,33 +250,37 @@ export class CompsService {
     }
 
     // EV/EBITDA
-    if (medians.evEbitda && target.evEbitda && target.evEbitda > 0 && currentPrice > 0) {
+    if (medians.evEbitda && target.evEbitda && target.evEbitda > 0 && currentPrice > 0 && shares > 0) {
       const ebitda = (target.marketCapValue * 1_000_000) / target.evEbitda;
       const impliedEV = ebitda * medians.evEbitda;
       const impliedPrice = impliedEV / shares;
-      impliedValuations.push({
-        metric: 'EV/EBITDA',
-        peerMedian: medians.evEbitda,
-        targetFundamental: ebitda,
-        impliedEquityValue: impliedEV,
-        impliedPrice,
-        upside: ((impliedPrice - currentPrice) / currentPrice) * 100,
-      });
+      if (impliedPrice > 0 && isFinite(impliedPrice)) {
+        impliedValuations.push({
+          metric: 'EV/EBITDA',
+          peerMedian: medians.evEbitda,
+          targetFundamental: ebitda,
+          impliedEquityValue: impliedEV,
+          impliedPrice,
+          upside: ((impliedPrice - currentPrice) / currentPrice) * 100,
+        });
+      }
     }
 
     // EV/Revenue
-    if (medians.evRevenue && target.evRevenue && target.evRevenue > 0 && currentPrice > 0) {
+    if (medians.evRevenue && target.evRevenue && target.evRevenue > 0 && currentPrice > 0 && shares > 0) {
       const revenue = (target.marketCapValue * 1_000_000) / target.evRevenue;
       const impliedEV = revenue * medians.evRevenue;
       const impliedPrice = impliedEV / shares;
-      impliedValuations.push({
-        metric: 'EV/Revenue',
-        peerMedian: medians.evRevenue,
-        targetFundamental: revenue,
-        impliedEquityValue: impliedEV,
-        impliedPrice,
-        upside: ((impliedPrice - currentPrice) / currentPrice) * 100,
-      });
+      if (impliedPrice > 0 && isFinite(impliedPrice)) {
+        impliedValuations.push({
+          metric: 'EV/Revenue',
+          peerMedian: medians.evRevenue,
+          targetFundamental: revenue,
+          impliedEquityValue: impliedEV,
+          impliedPrice,
+          upside: ((impliedPrice - currentPrice) / currentPrice) * 100,
+        });
+      }
     }
 
     // Summary sentence

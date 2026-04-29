@@ -337,28 +337,36 @@ export const ComparableAnalysisModule: React.FC<CompsProps> = ({
                 <p className="text-xs text-slate-500 py-2">Insufficient multiples data for implied valuation.</p>
               ) : (
                 <>
-                  {result.impliedValuations.map(iv => (
-                    <div key={iv.metric} className="flex items-center justify-between py-2.5 border-b border-white/[0.04] last:border-0">
-                      <span className="text-xs text-slate-400">Via {iv.metric}</span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-mono font-semibold text-white">
-                          ${formatSafe(iv.impliedPrice, 2)}
-                        </span>
-                        <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${iv.upside >= 0 ? "text-accent bg-accent/10" : "text-red-400 bg-red-400/10"}`}>
-                          {iv.upside >= 0 ? "+" : ""}{formatSafe(iv.upside, 1)}%
-                        </span>
+                  {result.impliedValuations.map(iv => {
+                    const priceValid = iv.impliedPrice > 0 && isFinite(iv.impliedPrice);
+                    const upsideValid = isFinite(iv.upside);
+                    return (
+                      <div key={iv.metric} className="flex items-center justify-between py-2.5 border-b border-white/[0.04] last:border-0">
+                        <span className="text-xs text-slate-400">Via {iv.metric}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-mono font-semibold text-white">
+                            {priceValid ? `$${formatSafe(iv.impliedPrice, 2)}` : "N/A"}
+                          </span>
+                          {priceValid && upsideValid && (
+                            <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${iv.upside >= 0 ? "text-accent bg-accent/10" : "text-red-400 bg-red-400/10"}`}>
+                              {iv.upside >= 0 ? "+" : ""}{formatSafe(iv.upside, 1)}%
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                  <div className="mt-4 p-3 bg-accent/[0.06] rounded-lg border border-accent/20 text-center">
-                    <div className="text-[9px] text-slate-500 uppercase tracking-wider mb-0.5">Avg Implied Price</div>
-                    <div className="text-xl font-mono font-bold text-accent">
-                      ${formatSafe(
-                        result.impliedValuations.reduce((s, v) => s + (v.impliedPrice || 0), 0) /
-                        (result.impliedValuations.length || 1), 2
-                      )}
-                    </div>
-                  </div>
+                    );
+                  })}
+                  {(() => {
+                    const valid = result.impliedValuations.filter(v => v.impliedPrice > 0 && isFinite(v.impliedPrice));
+                    if (valid.length === 0) return null;
+                    const avg = valid.reduce((s, v) => s + v.impliedPrice, 0) / valid.length;
+                    return (
+                      <div className="mt-4 p-3 bg-accent/[0.06] rounded-lg border border-accent/20 text-center">
+                        <div className="text-[9px] text-slate-500 uppercase tracking-wider mb-0.5">Avg Implied Price</div>
+                        <div className="text-xl font-mono font-bold text-accent">${formatSafe(avg, 2)}</div>
+                      </div>
+                    );
+                  })()}
                 </>
               )}
             </Card>
@@ -388,8 +396,11 @@ export const ComparableAnalysisModule: React.FC<CompsProps> = ({
                         label={{ value: "Rev Growth %", angle: -90, position: "insideLeft", offset: 10, fill: "#475569", fontSize: 9 }}
                       />
                       <Tooltip
-                        cursor={{ strokeDasharray: "3 3" }}
-                        contentStyle={{ backgroundColor: "#0f1423", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "8px", fontSize: "11px" }}
+                        cursor={{ strokeDasharray: "3 3", stroke: "rgba(255,255,255,0.08)" }}
+                        contentStyle={{ backgroundColor: "#0f1423", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "8px", fontSize: "11px", color: "#e2e8f0" }}
+                        labelStyle={{ color: "#94a3b8" }}
+                        itemStyle={{ color: "#e2e8f0" }}
+                        wrapperStyle={{ outline: "none" }}
                         formatter={(val: any, name: string) => [typeof val === "number" ? val.toFixed(1) : val, name]}
                       />
                       <Scatter data={scatterData} shape={<CustomDot />} />
@@ -411,7 +422,11 @@ export const ComparableAnalysisModule: React.FC<CompsProps> = ({
                       tickFormatter={(v: number) => `$${v}B`}
                     />
                     <Tooltip
-                      contentStyle={{ backgroundColor: "#0f1423", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "8px", fontSize: "11px" }}
+                      cursor={{ fill: "rgba(255,255,255,0.04)" }}
+                      contentStyle={{ backgroundColor: "#0f1423", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "8px", fontSize: "11px", color: "#e2e8f0" }}
+                      labelStyle={{ color: "#94a3b8" }}
+                      itemStyle={{ color: "#e2e8f0" }}
+                      wrapperStyle={{ outline: "none" }}
                       formatter={(v: number) => [`$${v.toFixed(1)}B`, "Market Cap"]}
                     />
                     <Bar dataKey="mktCap" radius={[4, 4, 0, 0]}>
@@ -439,7 +454,11 @@ export const ComparableAnalysisModule: React.FC<CompsProps> = ({
                   <XAxis dataKey="name" stroke="#475569" fontSize={10} tickLine={false} axisLine={false} />
                   <YAxis stroke="#475569" fontSize={10} tickLine={false} axisLine={false} />
                   <Tooltip
-                    contentStyle={{ backgroundColor: "#0f1423", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "8px", fontSize: "11px" }}
+                    cursor={{ fill: "rgba(255,255,255,0.04)" }}
+                    contentStyle={{ backgroundColor: "#0f1423", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "8px", fontSize: "11px", color: "#e2e8f0" }}
+                    labelStyle={{ color: "#94a3b8" }}
+                    itemStyle={{ color: "#e2e8f0" }}
+                    wrapperStyle={{ outline: "none" }}
                     formatter={(v: any) => [typeof v === "number" ? v.toFixed(1) + "x" : v, "P/E Ratio"]}
                   />
                   <Bar dataKey="pe" radius={[4, 4, 0, 0]}>
