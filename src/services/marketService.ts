@@ -32,23 +32,29 @@ export const INDICATORS_CONFIG = [
 ];
 
 const YAHOO_INDEX_SYMBOLS = new Set(['^GSPC', '^DJI', '^IXIC', '^RUT']);
-const CORS_PROXY = 'https://corsproxy.io/?url=';
+const CORS_PROXIES = [
+  (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+];
 
 async function fetchYahooIndex(symbol: string): Promise<{ price: number; change: number; changePercent: number } | null> {
-  try {
-    const encoded = encodeURIComponent(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`);
-    const res = await fetch(`${CORS_PROXY}${encoded}`);
-    if (!res.ok) return null;
-    const data = await res.json();
-    const meta = data?.chart?.result?.[0]?.meta;
-    if (!meta?.regularMarketPrice) return null;
-    const price: number = meta.regularMarketPrice;
-    const change: number = meta.regularMarketChange ?? (price - (meta.chartPreviousClose ?? meta.regularMarketPreviousClose ?? price));
-    const changePercent: number = meta.regularMarketChangePercent ?? (change / (price - change) * 100);
-    return { price, change, changePercent };
-  } catch {
-    return null;
+  const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`;
+  for (const buildUrl of CORS_PROXIES) {
+    try {
+      const res = await fetch(buildUrl(yahooUrl));
+      if (!res.ok) continue;
+      const data = await res.json();
+      const meta = data?.chart?.result?.[0]?.meta;
+      if (!meta?.regularMarketPrice) continue;
+      const price: number = meta.regularMarketPrice;
+      const change: number = meta.regularMarketChange ?? (price - (meta.chartPreviousClose ?? meta.regularMarketPreviousClose ?? price));
+      const changePercent: number = meta.regularMarketChangePercent ?? (change / (price - change) * 100);
+      return { price, change, changePercent };
+    } catch {
+      continue;
+    }
   }
+  return null;
 }
 
 /**
