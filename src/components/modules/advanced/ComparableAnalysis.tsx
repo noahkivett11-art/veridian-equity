@@ -104,13 +104,16 @@ export const ComparableAnalysisModule: React.FC<CompsProps> = ({
       </tr>`)
       .join("");
     const ivCards = result.impliedValuations
-      .map(iv => `<div class="stat">
-        <div class="sl">${iv.metric}</div>
-        <div class="sv">$${formatSafe(iv.impliedPrice, 2)}</div>
-        <div style="font-size:11px;color:${iv.upside >= 0 ? "#16a34a" : "#dc2626"};margin-top:3px">
-          ${iv.upside >= 0 ? "+" : ""}${formatSafe(iv.upside, 1)}% upside
-        </div>
-      </div>`)
+      .map(iv => {
+        const valid = iv.impliedPrice > 0 && iv.impliedPrice <= 5000 && isFinite(iv.impliedPrice);
+        return `<div class="stat">
+          <div class="sl">${iv.metric}</div>
+          <div class="sv">${valid ? `$${formatSafe(iv.impliedPrice, 2)}` : "N/A"}</div>
+          ${valid ? `<div style="font-size:11px;color:${iv.upside >= 0 ? "#16a34a" : "#dc2626"};margin-top:3px">
+            ${iv.upside >= 0 ? "+" : ""}${formatSafe(iv.upside, 1)}% upside
+          </div>` : ""}
+        </div>`;
+      })
       .join("");
     const stats = [
       { l: "Current Price", v: `$${formatSafe(result.target.price, 2)}` },
@@ -338,8 +341,8 @@ export const ComparableAnalysisModule: React.FC<CompsProps> = ({
               ) : (
                 <>
                   {result.impliedValuations.map(iv => {
-                    const priceValid = iv.impliedPrice > 0 && isFinite(iv.impliedPrice);
-                    const upsideValid = isFinite(iv.upside);
+                    const priceValid = iv.impliedPrice > 0 && iv.impliedPrice <= 5000 && isFinite(iv.impliedPrice);
+                    const upsideValid = priceValid && isFinite(iv.upside);
                     return (
                       <div key={iv.metric} className="flex items-center justify-between py-2.5 border-b border-white/[0.04] last:border-0">
                         <span className="text-xs text-slate-400">Via {iv.metric}</span>
@@ -347,7 +350,7 @@ export const ComparableAnalysisModule: React.FC<CompsProps> = ({
                           <span className="text-sm font-mono font-semibold text-white">
                             {priceValid ? `$${formatSafe(iv.impliedPrice, 2)}` : "N/A"}
                           </span>
-                          {priceValid && upsideValid && (
+                          {upsideValid && (
                             <span className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded ${iv.upside >= 0 ? "text-accent bg-accent/10" : "text-red-400 bg-red-400/10"}`}>
                               {iv.upside >= 0 ? "+" : ""}{formatSafe(iv.upside, 1)}%
                             </span>
@@ -357,13 +360,14 @@ export const ComparableAnalysisModule: React.FC<CompsProps> = ({
                     );
                   })}
                   {(() => {
-                    const valid = result.impliedValuations.filter(v => v.impliedPrice > 0 && isFinite(v.impliedPrice));
-                    if (valid.length === 0) return null;
-                    const avg = valid.reduce((s, v) => s + v.impliedPrice, 0) / valid.length;
+                    const peOnly = result.impliedValuations.find(
+                      v => v.metric === 'P/E Multiple' && v.impliedPrice > 0 && v.impliedPrice <= 5000 && isFinite(v.impliedPrice)
+                    );
+                    if (!peOnly) return null;
                     return (
                       <div className="mt-4 p-3 bg-accent/[0.06] rounded-lg border border-accent/20 text-center">
-                        <div className="text-[9px] text-slate-500 uppercase tracking-wider mb-0.5">Avg Implied Price</div>
-                        <div className="text-xl font-mono font-bold text-accent">${formatSafe(avg, 2)}</div>
+                        <div className="text-[9px] text-slate-500 uppercase tracking-wider mb-0.5">Implied Price (P/E)</div>
+                        <div className="text-xl font-mono font-bold text-accent">${formatSafe(peOnly.impliedPrice, 2)}</div>
                       </div>
                     );
                   })()}
