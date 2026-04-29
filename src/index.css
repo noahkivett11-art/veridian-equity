@@ -265,3 +265,24 @@ body {
 /* Keep accent/positive/negative colours unchanged */
 [data-theme="light"] .positive { color: #16a34a !important; }
 [data-theme="light"] .negative { color: #dc2626 !important; }
+
+/* Ensure text on accent-coloured buttons stays dark in light mode */
+[data-theme="light"] .btn-primary { color: #0a0e1a !important; }
+
+/* Landing page section defaults (dark mode) */
+.landing-hero {
+  background: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(34,197,94,0.12) 0%, transparent 70%),
+              linear-gradient(160deg, #0a0e1a 0%, #0d1829 40%, #0a0e1a 100%);
+}
+.landing-alt-bg {
+  background: rgba(15, 20, 35, 0.5);
+}
+
+/* Landing page section overrides for light mode */
+[data-theme="light"] .landing-hero {
+  background: radial-gradient(ellipse 80% 60% at 50% -10%, rgba(34,197,94,0.08) 0%, transparent 70%),
+              linear-gradient(160deg, #f8fafc 0%, #f0f7ff 40%, #f8fafc 100%) !important;
+}
+[data-theme="light"] .landing-alt-bg {
+  background: rgba(241, 245, 249, 0.85) !important;
+}

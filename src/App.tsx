@@ -133,7 +133,13 @@ export default function App() {
   };
 
   if (showLanding) {
-    return <LandingPage onLaunch={() => setShowLanding(false)} />;
+    return (
+      <LandingPage
+        onLaunch={() => setShowLanding(false)}
+        isLightMode={isLightMode}
+        onToggleLightMode={() => setIsLightMode(v => !v)}
+      />
+    );
   }
 
   return (

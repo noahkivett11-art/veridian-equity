@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { CompanyData, KeyStatistics } from "./companyService";
 import { MarketDataService } from "./api/marketDataService";
+import { FinnhubClient } from "./api/finnhubClient";
 import { parseNumber } from "../lib/utils";
 
 export interface PeerData {
@@ -12,7 +12,7 @@ export interface PeerData {
   name: string;
   sector: string;
   marketCap: string;
-  marketCapValue: number;
+  marketCapValue: number;    // millions USD
   revenueGrowth: number | null;
   ebitdaMargin: number | null;
   peRatio: number | null;
@@ -23,6 +23,9 @@ export interface PeerData {
   revenueTTM: number | null;
   sharesOutstanding: number | null;
   price: number | null;
+  eps: number | null;
+  dividendYield: number | null;
+  roe: number | null;
 }
 
 export interface ImpliedValuation {
@@ -40,6 +43,8 @@ export interface CompsResult {
   averages: Partial<PeerData>;
   medians: Partial<PeerData>;
   impliedValuations: ImpliedValuation[];
+  summaryText: string;
+  targetRanks: Record<string, { rank: number; total: number }>;
 }
 
 export class CompsService {
@@ -56,14 +61,96 @@ export class CompsService {
 
   public async fetchPeerData(symbol: string): Promise<PeerData | null> {
     const api = MarketDataService.getInstance();
-    const [header, stats] = await Promise.all([
+    const [header, stats, rawFin] = await Promise.all([
       api.getCompanyHeader(symbol),
-      api.getCompanyStats(symbol)
+      api.getCompanyStats(symbol),
+      FinnhubClient.getInstance().getFinancialsReported(symbol).catch(() => null),
     ]);
 
     if (!header || !stats) return null;
 
-    const mktCapVal = parseNumber(header.marketCap) * (header.marketCap.includes('T') ? 1000000 : header.marketCap.includes('B') ? 1000 : 1);
+    // Market cap in millions (Finnhub profile2.marketCapitalization is in millions)
+    const mktCapVal =
+      parseNumber(header.marketCap) *
+      (header.marketCap.includes('T') ? 1_000_000 :
+       header.marketCap.includes('B') ? 1_000 : 1);
+
+    // Use metric API values if positive; otherwise fall back to financial statements
+    let evEbitda: number | null = (() => { const v = parseNumber(stats.evEbitda); return v > 0 ? v : null; })();
+    let evRevenue: number | null = (() => { const v = parseNumber(stats.evRevenue); return v > 0 ? v : null; })();
+
+    if ((!evEbitda || !evRevenue) && rawFin?.data?.length) {
+      try {
+        // Take most recent annual filing (quarter===0 = annual); fall back to any record
+        const annuals = rawFin.data.filter((r: any) => r.quarter === 0);
+        const latest = (annuals.length > 0 ? annuals : rawFin.data)[0];
+        if (latest?.report) {
+          // Build lookup maps normalising both "us-gaap:Foo" and "us-gaap_Foo" forms
+          const byMap = (items: any[]): Record<string, number> => {
+            const m: Record<string, number> = {};
+            for (const x of (items ?? [])) {
+              const v = Number(x.value);
+              if (isNaN(v)) continue;
+              const key = String(x.concept).replace(':', '_');
+              m[key] = v;
+            }
+            return m;
+          };
+          const ic = byMap(latest.report?.ic ?? []);
+          const cf = byMap(latest.report?.cf ?? []);
+          const bs = byMap(latest.report?.bs ?? []);
+
+          const first = (map: Record<string, number>, ...keys: string[]) => {
+            for (const k of keys) { const v = map[k]; if (v && Math.abs(v) > 0) return v; }
+            return 0;
+          };
+
+          const revenue = first(ic,
+            'us-gaap_RevenueFromContractWithCustomerExcludingAssessedTax',
+            'us-gaap_RevenueFromContractWithCustomerIncludingAssessedTax',
+            'us-gaap_Revenues',
+            'us-gaap_SalesRevenueNet',
+            'us-gaap_SalesRevenueGoodsNet',
+          );
+          const opIncome = first(ic, 'us-gaap_OperatingIncomeLoss');
+          const da = first(cf,
+            'us-gaap_DepreciationDepletionAndAmortization',
+            'us-gaap_DepreciationAndAmortization',
+            'us-gaap_Depreciation',
+          );
+          const ebitda = opIncome + da;
+
+          const ltDebt = first(bs,
+            'us-gaap_LongTermDebtNoncurrent',
+            'us-gaap_LongTermDebtAndCapitalLeaseObligations',
+            'us-gaap_LongTermDebt',
+          );
+          const currentDebt = first(bs,
+            'us-gaap_LongTermDebtCurrent',
+            'us-gaap_DebtCurrent',
+            'us-gaap_ShortTermBorrowings',
+          );
+          const totalDebt = ltDebt + currentDebt;
+
+          const cash = first(bs,
+            'us-gaap_CashAndCashEquivalentsAtCarryingValue',
+            'us-gaap_CashCashEquivalentsAndShortTermInvestments',
+            'us-gaap_CashAndCashEquivalentsAndShortTermInvestments',
+            'us-gaap_Cash',
+          );
+
+          // mktCapVal is in millions; XBRL values are in full dollars
+          const mktCapDollars = mktCapVal * 1_000_000;
+          const ev = mktCapDollars + totalDebt - cash;
+
+          if (!evEbitda && ebitda > 0 && ev > 0) evEbitda = parseFloat((ev / ebitda).toFixed(2));
+          if (!evRevenue && revenue > 0 && ev > 0) evRevenue = parseFloat((ev / revenue).toFixed(2));
+        }
+      } catch { /* ignore */ }
+    }
+
+    const pos = (v: number) => (v > 0 ? v : null);
+    const nz  = (v: number) => (!isNaN(v) && v !== 0 ? v : null);
 
     return {
       symbol: header.symbol,
@@ -71,31 +158,30 @@ export class CompsService {
       sector: header.sector,
       marketCap: header.marketCap,
       marketCapValue: mktCapVal,
-      revenueGrowth: parseNumber(stats.revenueGrowth),
-      ebitdaMargin: parseNumber(stats.operatingMarginTTM), // Using op margin as proxy
-      peRatio: parseNumber(stats.peRatio),
-      evEbitda: parseNumber(stats.evEbitda),
-      evRevenue: parseNumber(stats.evRevenue),
-      beta: parseNumber(stats.beta),
-      return52w: parseNumber(stats.perf52w),
-      revenueTTM: parseNumber(stats.revenueTTM),
-      sharesOutstanding: parseNumber(stats.sharesOutstanding),
-      price: parseNumber(header.price)
+      revenueGrowth:     nz(parseNumber(stats.revenueGrowth)),
+      ebitdaMargin:      nz(parseNumber(stats.operatingMarginTTM)),
+      peRatio:           pos(parseNumber(stats.peRatio)),
+      evEbitda,
+      evRevenue,
+      beta:              nz(parseNumber(stats.beta)),
+      return52w:         nz(parseNumber(stats.perf52w)),
+      revenueTTM:        pos(parseNumber(stats.revenueTTM)),
+      sharesOutstanding: pos(parseNumber(stats.sharesOutstanding)),
+      price:             pos(parseNumber(header.price)),
+      eps:               nz(parseNumber(stats.eps)),
+      dividendYield:     pos(parseNumber(stats.dividendYield)),
+      roe:               nz(parseNumber(stats.roe)),
     };
   }
 
   public async fetchPeers(symbol: string): Promise<PeerData[]> {
     const api = MarketDataService.getInstance();
     const peerSymbols = await api.getPeers(symbol);
-    
-    // Limit to top 8 peers for performance and relevance
     const topPeers = peerSymbols.slice(0, 8);
-    
     const peerData = await Promise.all(
       topPeers.map(s => this.fetchPeerData(s).catch(() => null))
     );
-    
-    return peerData.filter(p => p !== null) as PeerData[];
+    return peerData.filter((p): p is PeerData => p !== null);
   }
 
   public async runComparableAnalysis(symbol: string): Promise<CompsResult | null> {
@@ -109,67 +195,77 @@ export class CompsService {
   }
 
   public calculateComps(target: PeerData, peers: PeerData[]): CompsResult {
-    const metrics: (keyof PeerData)[] = ['peRatio', 'evEbitda', 'evRevenue', 'revenueGrowth', 'ebitdaMargin', 'beta', 'return52w'];
-    
+    const metrics: (keyof PeerData)[] = [
+      'peRatio', 'evEbitda', 'evRevenue', 'revenueGrowth', 'ebitdaMargin', 'beta', 'return52w',
+    ];
+
     const averages: any = {};
     const medians: any = {};
 
     metrics.forEach(metric => {
       const values = peers
-        .map(p => p[metric] as number)
-        .filter(v => v !== null && !isNaN(v))
+        .map(p => p[metric] as number | null)
+        .filter((v): v is number => v !== null && !isNaN(v))
         .sort((a, b) => a - b);
 
       if (values.length > 0) {
         averages[metric] = values.reduce((a, b) => a + b, 0) / values.length;
-        
         const mid = Math.floor(values.length / 2);
-        medians[metric] = values.length % 2 !== 0 
-          ? values[mid] 
-          : (values[mid - 1] + values[mid]) / 2;
+        medians[metric] =
+          values.length % 2 !== 0 ? values[mid] : (values[mid - 1] + values[mid]) / 2;
       } else {
         averages[metric] = null;
         medians[metric] = null;
       }
     });
 
+    const currentPrice = target.price || 0;
+    const shares =
+      target.sharesOutstanding ||
+      (target.marketCapValue * 1_000_000 / (currentPrice || 1));
     const impliedValuations: ImpliedValuation[] = [];
-    const shares = target.sharesOutstanding || (target.marketCapValue / (target.peRatio && target.peRatio > 0 ? (target.marketCapValue / target.peRatio) : 150));
-    const currentPrice = target.marketCapValue / shares;
 
-    // Implied P/E
-    if (medians.peRatio && target.peRatio) {
-      const earnings = target.marketCapValue / target.peRatio;
-      const impliedEquityValue = earnings * medians.peRatio;
-      const impliedPrice = impliedEquityValue / shares;
-      impliedValuations.push({
-        metric: 'P/E Multiple',
-        peerMedian: medians.peRatio,
-        targetFundamental: earnings,
-        impliedEquityValue,
-        impliedPrice,
-        upside: ((impliedPrice - currentPrice) / currentPrice) * 100
-      });
+    // P/E via EPS — implied price = EPS × median peer P/E
+    // Derive EPS from price/PE when not directly available
+    const effectiveEps =
+      (target.eps !== null && target.eps > 0)
+        ? target.eps
+        : (currentPrice > 0 && target.peRatio && target.peRatio > 0)
+          ? currentPrice / target.peRatio
+          : null;
+
+    if (medians.peRatio && effectiveEps && effectiveEps > 0 && currentPrice > 0) {
+      const impliedPrice = effectiveEps * medians.peRatio;
+      if (impliedPrice > 0) {
+        impliedValuations.push({
+          metric: 'P/E Multiple',
+          peerMedian: medians.peRatio,
+          targetFundamental: effectiveEps,
+          impliedEquityValue: impliedPrice * shares,
+          impliedPrice,
+          upside: ((impliedPrice - currentPrice) / currentPrice) * 100,
+        });
+      }
     }
 
-    // Implied EV/EBITDA
-    if (medians.evEbitda && target.evEbitda) {
-      const ebitda = target.marketCapValue / target.evEbitda;
+    // EV/EBITDA
+    if (medians.evEbitda && target.evEbitda && target.evEbitda > 0 && currentPrice > 0) {
+      const ebitda = (target.marketCapValue * 1_000_000) / target.evEbitda;
       const impliedEV = ebitda * medians.evEbitda;
-      const impliedPrice = impliedEV / shares; // Simplified (assuming EV ~ Equity Value for this mock)
+      const impliedPrice = impliedEV / shares;
       impliedValuations.push({
         metric: 'EV/EBITDA',
         peerMedian: medians.evEbitda,
         targetFundamental: ebitda,
         impliedEquityValue: impliedEV,
         impliedPrice,
-        upside: ((impliedPrice - currentPrice) / currentPrice) * 100
+        upside: ((impliedPrice - currentPrice) / currentPrice) * 100,
       });
     }
 
-    // Implied EV/Revenue
-    if (medians.evRevenue && target.evRevenue) {
-      const revenue = target.marketCapValue / target.evRevenue;
+    // EV/Revenue
+    if (medians.evRevenue && target.evRevenue && target.evRevenue > 0 && currentPrice > 0) {
+      const revenue = (target.marketCapValue * 1_000_000) / target.evRevenue;
       const impliedEV = revenue * medians.evRevenue;
       const impliedPrice = impliedEV / shares;
       impliedValuations.push({
@@ -178,16 +274,33 @@ export class CompsService {
         targetFundamental: revenue,
         impliedEquityValue: impliedEV,
         impliedPrice,
-        upside: ((impliedPrice - currentPrice) / currentPrice) * 100
+        upside: ((impliedPrice - currentPrice) / currentPrice) * 100,
       });
     }
 
-    return {
-      target,
-      peers,
-      averages,
-      medians,
-      impliedValuations
-    };
+    // Summary sentence
+    const summaryText = (() => {
+      const tPE = target.peRatio;
+      const mPE = medians.peRatio as number | null;
+      if (!tPE || !mPE) return `${target.symbol} vs ${peers.length} comparable peers.`;
+      const pct = ((tPE - mPE) / mPE) * 100;
+      const dir = pct >= 0 ? 'premium' : 'discount';
+      return `${target.symbol} trades at a P/E of ${tPE.toFixed(1)}x vs peer median of ${mPE.toFixed(1)}x, representing a ${Math.abs(pct).toFixed(0)}% ${dir} to peers.`;
+    })();
+
+    // Target rank vs peers (ascending: rank 1 = lowest/cheapest multiple)
+    const targetRanks: Record<string, { rank: number; total: number }> = {};
+    (['peRatio', 'evEbitda', 'evRevenue', 'revenueGrowth'] as const).forEach(metric => {
+      const targetVal = target[metric] as number | null;
+      if (targetVal === null) return;
+      const peerVals = peers
+        .map(p => p[metric] as number | null)
+        .filter((v): v is number => v !== null);
+      if (peerVals.length === 0) return;
+      const all = [targetVal, ...peerVals].sort((a, b) => a - b);
+      targetRanks[metric] = { rank: all.indexOf(targetVal) + 1, total: all.length };
+    });
+
+    return { target, peers, averages, medians, impliedValuations, summaryText, targetRanks };
   }
 }

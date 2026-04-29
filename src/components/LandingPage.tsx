@@ -4,10 +4,13 @@ import {
   TrendingUp, Shield, BarChart2, Globe, ChevronRight, ArrowRight,
   Quote, Star, ChevronDown, ChevronUp, Mail, MapPin, BookOpen,
   Award, Users, Database, Lightbulb, HelpCircle, Calendar, Tag,
+  Sun, Moon,
 } from "lucide-react";
 
 interface LandingPageProps {
   onLaunch: () => void;
+  isLightMode: boolean;
+  onToggleLightMode: () => void;
 }
 
 const TICKER_ITEMS = [
@@ -190,7 +193,7 @@ const FaqItem: React.FC<{ q: string; a: string }> = ({ q, a }) => {
   );
 };
 
-export const LandingPage: React.FC<LandingPageProps> = ({ onLaunch }) => {
+export const LandingPage: React.FC<LandingPageProps> = ({ onLaunch, isLightMode, onToggleLightMode }) => {
   const [expandedBlog, setExpandedBlog] = useState<number | null>(null);
 
   return (
@@ -200,10 +203,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunch }) => {
 
       {/* ── Hero ── */}
       <section
-        className="relative min-h-screen flex flex-col"
-        style={{
-          background: "radial-gradient(ellipse 80% 60% at 50% -10%, rgba(34,197,94,0.12) 0%, transparent 70%), linear-gradient(160deg, #0a0e1a 0%, #0d1829 40%, #0a0e1a 100%)",
-        }}
+        className="landing-hero relative min-h-screen flex flex-col"
       >
         <div className="absolute inset-0 pointer-events-none opacity-[0.025]"
           style={{ backgroundImage: "linear-gradient(rgba(34,197,94,1) 1px, transparent 1px), linear-gradient(90deg, rgba(34,197,94,1) 1px, transparent 1px)", backgroundSize: "64px 64px" }}
@@ -227,9 +227,18 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunch }) => {
             <a href="#contact"    className="hover:text-white transition-colors">Contact</a>
           </div>
 
-          <motion.button onClick={onLaunch} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="btn-primary flex items-center gap-2 text-sm">
-            Launch Dashboard <ArrowRight className="w-4 h-4" />
-          </motion.button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={onToggleLightMode}
+              className="w-8 h-8 rounded-lg bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/[0.1] transition-all"
+              title={isLightMode ? "Switch to dark mode" : "Switch to light mode"}
+            >
+              {isLightMode ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />}
+            </button>
+            <motion.button onClick={onLaunch} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} className="btn-primary flex items-center gap-2 text-sm">
+              Launch Dashboard <ArrowRight className="w-4 h-4" />
+            </motion.button>
+          </div>
         </nav>
 
         <div className="relative z-10 flex-1 flex flex-col items-center justify-center text-center px-6 py-16">
@@ -270,7 +279,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunch }) => {
       </section>
 
       {/* ── Why Choose Us ── */}
-      <section id="why" className="py-28 px-6" style={{ background: "rgba(15,20,35,0.5)" }}>
+      <section id="why" className="landing-alt-bg py-28 px-6">
         <div className="max-w-5xl mx-auto">
           <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.6 }} className="text-center mb-16">
             <p className="text-xs text-accent font-semibold uppercase tracking-widest mb-3">Our Edge</p>
@@ -316,7 +325,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunch }) => {
       </section>
 
       {/* ── Team ── */}
-      <section id="team" className="py-28 px-6" style={{ background: "rgba(15,20,35,0.5)" }}>
+      <section id="team" className="landing-alt-bg py-28 px-6">
         <div className="max-w-5xl mx-auto">
           <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.6 }} className="text-center mb-16">
             <p className="text-xs text-accent font-semibold uppercase tracking-widest mb-3">The People</p>
@@ -376,7 +385,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunch }) => {
       </section>
 
       {/* ── Blog ── */}
-      <section id="blog" className="py-28 px-6" style={{ background: "rgba(15,20,35,0.5)" }}>
+      <section id="blog" className="landing-alt-bg py-28 px-6">
         <div className="max-w-5xl mx-auto">
           <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.6 }} className="text-center mb-16">
             <p className="text-xs text-accent font-semibold uppercase tracking-widest mb-3">Insights</p>
@@ -442,7 +451,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onLaunch }) => {
       </section>
 
       {/* ── CTA ── */}
-      <section className="py-24 px-6 text-center" style={{ background: "rgba(15,20,35,0.5)" }}>
+      <section className="landing-alt-bg py-24 px-6 text-center">
         <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.6 }} className="max-w-xl mx-auto">
           <h2 className="font-display text-4xl font-bold text-white mb-4">Ready to Start Analyzing?</h2>
           <p className="text-slate-400 mb-10 leading-relaxed">Access our full suite of institutional-grade research and analytics tools — directly in your browser.</p>
